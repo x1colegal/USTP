@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <EditText
+        android:id="@+id/etHost"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Server IP"
+        android:text="144.217.242.195" />
+
+    <EditText
+        android:id="@+id/etServerPort"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Server Port"
+        android:inputType="number"
+        android:text="40001" />
+
+    <EditText
+        android:id="@+id/etLocalPort"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Local Port"
+        android:inputType="number"
+        android:text="40000" />
+
+    <Button
+        android:id="@+id/btnStart"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Start USTP" />
+
+    <TextView
+        android:id="@+id/tvStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Idle"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp" />
+
+    <androidx.media3.ui.PlayerView
+        android:id="@+id/playerView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        app:use_controller="true" />
+
+</LinearLayout>
