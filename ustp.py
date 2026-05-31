@@ -127,7 +127,7 @@ class USTPReceiver:
         self.buffer_by_pos: Dict[int, bytes] = {}
         self.seq_to_pos: Dict[int, int] = {}
         self.next_pos = 0
-        self.started = False
+        self.contiguous_max_pos = -1
 
         self.received_seq: Set[int] = set()
         self.nack_ts: Dict[int, float] = {}
@@ -148,14 +148,14 @@ class USTPReceiver:
         self.seq_to_pos[seq] = pos
         self.buffer_by_pos[pos] = pkt.payload
 
-        if not self.started:
-            self.started = True
-            self.next_pos = min(self.buffer_by_pos.keys())
+        # USTP design: deliver immediately (unordered live), never block waiting for gaps.
+        # The application must use stream_pos metadata to restore logical order if needed.
+        out = pkt.payload
 
-        out = b""
+        # Track contiguous range growth for debugging/reorder visibility.
         while self.next_pos in self.buffer_by_pos:
-            chunk = self.buffer_by_pos.pop(self.next_pos)
-            out += chunk
+            chunk = self.buffer_by_pos[self.next_pos]
+            self.contiguous_max_pos = self.next_pos + len(chunk) - 1
             self.next_pos += len(chunk)
 
         return out

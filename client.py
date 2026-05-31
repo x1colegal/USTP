@@ -24,6 +24,8 @@ def main() -> None:
     peer = (args.peer_ip, args.peer_port)
 
     recv = USTPReceiver(sock=usock, peer=peer)
+    out_by_pos = {}
+    next_out_pos = 0
 
     tsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     tsock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -88,9 +90,14 @@ def main() -> None:
             if pkt.pkt_type == TYPE_CLOSE:
                 break
             if pkt.pkt_type == TYPE_DATA:
-                out = recv.handle_data(pkt)
-                if out:
-                    bcast(out)
+                # Keep USTP transport behavior (accept out-of-order), but TCP output
+                # must be strictly ordered by stream_pos to avoid payload corruption.
+                recv.handle_data(pkt)
+                out_by_pos[pkt.stream_pos] = pkt.payload
+                while next_out_pos in out_by_pos:
+                    chunk = out_by_pos.pop(next_out_pos)
+                    bcast(chunk)
+                    next_out_pos += len(chunk)
     except KeyboardInterrupt:
         print("[USTP-CLIENT] Interrupted")
     finally:
