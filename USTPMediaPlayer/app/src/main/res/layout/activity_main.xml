@@ -4,50 +4,74 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="12dp">
+    android:padding="12dp"
+    android:background="#0F141A">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="USTP Media Player"
+        android:textColor="#EAF2FF"
+        android:textStyle="bold"
+        android:textSize="22sp"
+        android:paddingBottom="4dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Conecta no servidor USTP e reproduz stream com recuperação de perda."
+        android:textColor="#9DB0C9"
+        android:textSize="13sp"
+        android:paddingBottom="12dp" />
 
     <EditText
         android:id="@+id/etHost"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="Server IP"
+        android:textColor="#EAF2FF"
+        android:textColorHint="#7E8EA4"
         android:text="144.217.242.195" />
-
-    <EditText
-        android:id="@+id/etServerPort"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="Server Port"
-        android:inputType="number"
-        android:text="40001" />
-
-    <EditText
-        android:id="@+id/etLocalPort"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="Local Port"
-        android:inputType="number"
-        android:text="40000" />
 
     <EditText
         android:id="@+id/etPlayoutDelay"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="Playout Delay (ms)"
+        android:hint="Estabilidade (delay em ms)"
+        android:textColor="#EAF2FF"
+        android:textColorHint="#7E8EA4"
         android:inputType="number"
         android:text="140" />
+
+    <TextView
+        android:id="@+id/tvHelp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Menor delay = menor latência (pode travar mais). Maior delay = mais estável."
+        android:textColor="#9DB0C9"
+        android:textSize="12sp"
+        android:paddingTop="2dp"
+        android:paddingBottom="8dp" />
 
     <Button
         android:id="@+id/btnStart"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Start USTP" />
+        android:text="Conectar e Reproduzir" />
+
+    <Button
+        android:id="@+id/btnFullscreen"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Tela Cheia"
+        android:layout_marginTop="6dp" />
 
     <TextView
         android:id="@+id/tvStatus"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Idle"
+        android:textColor="#C5D3E6"
         android:paddingTop="8dp"
         android:paddingBottom="8dp" />
 

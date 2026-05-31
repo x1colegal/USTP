@@ -1,0 +1,18 @@
+USTP - CLIENTE MODO UDP (saida imediata, sem esperar pacote perdido)
+
+1) Entrar na pasta:
+cd /data/data/com.termux/files/home/ICP
+
+2) Rodar cliente USTP com saida UDP local:
+./run_client_udp.sh 144.217.242.195 40001 127.0.0.1 1238
+
+3) Receber UDP com ffplay (Termux):
+ffplay -fflags nobuffer -flags low_delay -f mpegts udp://127.0.0.1:1238
+
+4) Alternativa com VLC Android (URL de rede):
+udp://127.0.0.1:1238
+
+Observacao:
+- No modo UDP, o cliente entrega 5 e 6 mesmo se 4 perdeu.
+- O USTP pede retransmissao do 4 em paralelo.
+- Logs mostram GAP/RECOVERY para reconstruir a ordem logica.
