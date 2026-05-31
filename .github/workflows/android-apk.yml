@@ -23,6 +23,10 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: gradle
+          cache-dependency-path: |
+            USTPMediaPlayer/**/*.gradle*
+            USTPMediaPlayer/**/gradle-wrapper.properties
+            USTPMediaPlayer/gradle/*.versions.toml
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
