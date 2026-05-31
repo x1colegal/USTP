@@ -1,98 +1,108 @@
 # USTP (UDP Speedy Transmission Protocol)
 
-USTP is a reliable transport protocol built over UDP with selective retransmission.
+USTP is a Python proof-of-concept reliable transport over UDP.
 
-## What it does
-- Reliable delivery over UDP (ACK + selective retransmit)
-- Out-of-order reception with in-order reconstruction
-- NAT-friendly endpoint learning on server side
-- Live MPEG-TS forwarding (for VLC testing)
-- Generic file transfer over USTP
+## Scope (current repo)
+This repository focuses on the **Python transport/runtime** only:
+- USTP packet format
+- Selective retransmission (ACK + retransmit request)
+- Out-of-order receive handling
+- Stream mode (FFmpeg MPEG-TS over USTP)
+- File transfer mode over USTP
 
-## Protocol behavior (loss case)
-Example sequence:
-1, 2, 3, 4(lost), 5, 6, 7, 8
+No first-party native player/app is part of the supported scope in this repo.
+
+## Protocol behavior
+USTP allows physical packet arrival out of order and selective recovery.
+
+Example arrival:
+`1 2 3 5 6` (packet `4` missing)
 
 Receiver behavior:
-- Accepts 5, 6, 7, 8 immediately
-- Buffers out-of-order packets
-- Requests retransmit for missing 4
-- When 4 arrives, reconstructs and delivers in correct order
+1. Accepts `5` and `6` immediately at transport level.
+2. Tracks missing `4`.
+3. Sends `RETRANSMIT_REQUEST` for `4`.
+4. Reconstructs logical order when needed by output mode.
 
-## Project files
-- `packet.py`: USTP packet format
-- `ustp.py`: USTP sender/receiver core for stream mode
-- `server.py`: USTP stream sender (FFmpeg -> USTP/UDP)
-- `client.py`: USTP stream receiver (USTP/UDP -> TCP localhost:1238)
-- `ustp_file_server.py`: USTP file transfer sender
-- `ustp_file_client.py`: USTP file transfer receiver
-- `sender.py` / `receiver.py`: thin wrappers
-- `HoU/`: experimental HTTP-over-USTP work (ignored by default)
+## Files
+- `packet.py`: packet structure and serialization
+- `ustp.py`: sender/receiver core logic
+- `server.py`: FFmpeg input -> USTP sender
+- `client.py`: USTP receiver -> TCP or UDP local output
+- `ustp_file_server.py`: file sender
+- `ustp_file_client.py`: file receiver
+- `run_server.sh`, `run_client.sh`, `run_client_udp.sh`: helper scripts
 
 ## Requirements
 - Python 3
-- FFmpeg (for stream mode)
-- UDP reachable between peers
+- FFmpeg (stream mode)
+- UDP reachability between peers
 
-No root is required on Android for USTP (regular UDP sockets).
+## Stream mode
 
----
-
-## 1) Stream mode (MPEG-TS over USTP)
-
-### Server (VPS/PC)
+### Server
 ```bash
 python3 server.py \
-  --peer-ip <CLIENT_PUBLIC_IP> \
+  --peer-ip <CLIENT_IP_OR_PUBLIC_IP> \
   --peer-port 0 \
   --bind-ip 0.0.0.0 \
   --bind-port 40001 \
-  --video "<VIDEO_URL_OR_LOCAL_FILE>" \
+  --video "<HLS_URL_OR_FILE>" \
   --window 512 \
   --rto 0.25 \
   --loss 0
 ```
 
 Notes:
-- `--peer-port 0` enables endpoint learning from client HELLO source port (NAT-friendly).
-- `--loss` is simulated outbound packet loss on server side.
+- `--peer-port 0` enables endpoint learning from client control packets (NAT-friendly behavior).
+- `--loss` simulates outbound packet loss on server side.
 
-### Client (Android/PC)
+### Client (TCP output for VLC)
 ```bash
 python3 client.py \
-  --peer-ip <SERVER_PUBLIC_IP> \
+  --peer-ip <SERVER_IP> \
   --peer-port 40001 \
   --bind-ip 0.0.0.0 \
   --bind-port 40000 \
+  --output-mode tcp \
   --tcp-host 127.0.0.1 \
-  --tcp-port 1238 \
-  --keepalive-interval 0.12
+  --tcp-port 1238
 ```
 
-### VLC
-Open:
+VLC URL:
 ```text
 tcp://127.0.0.1:1238
 ```
 
----
+### Client (UDP output)
+```bash
+python3 client.py \
+  --peer-ip <SERVER_IP> \
+  --peer-port 40001 \
+  --bind-ip 0.0.0.0 \
+  --bind-port 40000 \
+  --output-mode udp \
+  --udp-ip 127.0.0.1 \
+  --udp-port 1238 \
+  --reorder-buffer-ms 80
+```
 
-## 2) File transfer mode (generic bytes over USTP)
+## File transfer mode
 
-### Receiver (client side)
+### Receiver
 ```bash
 python3 ustp_file_client.py \
-  --peer-ip <SERVER_PUBLIC_IP> \
+  --peer-ip <SERVER_IP> \
   --peer-port 41001 \
   --bind-ip 0.0.0.0 \
   --bind-port 41000 \
   --dst ./received
 ```
 
-### Sender (server side)
+### Sender
 ```bash
 python3 ustp_file_server.py \
-  --peer-ip <CLIENT_PUBLIC_IP> \
+  --peer-ip <CLIENT_IP> \
   --peer-port 0 \
   --bind-ip 0.0.0.0 \
   --bind-port 41001 \
@@ -102,27 +112,15 @@ python3 ustp_file_server.py \
   --loss 0
 ```
 
-Notes:
-- Supports single file or recursive folder transfer.
-- Uses app frames: metadata, data, end-of-file.
+## Limitations
+- Experimental PoC, not production-hardened.
+- Generic media players may require ordered output behavior to avoid corruption.
+- Behavior under high loss/high RTT is still under active tuning.
 
----
-
-## GitHub publish notes
-This repo includes a `.gitignore` that ignores:
+## GitHub notes
+Current `.gitignore` intentionally ignores:
 - `*.sh`
 - `HoU/`
 - cache/temp/log files
 
-If needed, adjust `.gitignore` before publishing.
-
-## Disclaimer
-USTP is a PoC transport protocol for experimentation and learning. It is not production-hardened like QUIC.
-
-## Roadmap Note (Temporary Bridges)
-Current compatibility bridges (for example converting USTP traffic to friendlier/known protocols for existing tools) are temporary and will be discontinued in future versions.
-
-Planned direction:
-- Official native implementations for key use cases (no protocol-conversion hacks in the final path)
-- First-party apps/tools for USTP workflows (for example native streaming over USTP)
-- HoU (HTTP-over-USTP) is currently WIP and non-public for now
+If you want to version helper scripts, add them with `git add -f`.

@@ -19,8 +19,8 @@ def main() -> None:
     ap.add_argument("--output-mode", choices=["tcp", "udp"], default="tcp")
     ap.add_argument("--udp-ip", default="127.0.0.1")
     ap.add_argument("--udp-port", type=int, default=1238)
-    ap.add_argument("--udp-unordered-live", action="store_true", help="UDP imediato fora de ordem (pode corromper players comuns)")
-    ap.add_argument("--reorder-buffer-ms", type=int, default=80, help="Atraso inicial para acumular e ordenar no modo UDP ordenado")
+    ap.add_argument("--udp-unordered-live", action="store_true", help="Immediate out-of-order UDP output (may corrupt generic players)")
+    ap.add_argument("--reorder-buffer-ms", type=int, default=80, help="Initial playout buffer delay for ordered UDP mode")
     ap.add_argument("--keepalive-interval", type=float, default=0.12)
     args = ap.parse_args()
 
