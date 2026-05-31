@@ -3,6 +3,7 @@ package com.ustp.player
 import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -30,6 +31,8 @@ class MainActivity : AppCompatActivity() {
         val btnStart = findViewById<Button>(R.id.btnStart)
         val btnFullscreen = findViewById<Button>(R.id.btnFullscreen)
         val playerView = findViewById<PlayerView>(R.id.playerView)
+        val fullscreenView = findViewById<PlayerView>(R.id.playerFullscreen)
+        val controlPanel = findViewById<LinearLayout>(R.id.controlPanel)
 
         val fixedServerPort = 40001
         val fixedLocalPort = 40000
@@ -48,6 +51,7 @@ class MainActivity : AppCompatActivity() {
             val exo = ExoPlayer.Builder(this).build()
             player = exo
             playerView.player = exo
+            fullscreenView.player = exo
 
             val dsFactory = UstpDataSourceFactory(c)
             val mediaSource = ProgressiveMediaSource.Factory(dsFactory, DefaultExtractorsFactory())
@@ -61,8 +65,11 @@ class MainActivity : AppCompatActivity() {
 
         btnFullscreen.setOnClickListener {
             fullscreen = !fullscreen
+            controlPanel.visibility = if (fullscreen) android.view.View.GONE else android.view.View.VISIBLE
+            playerView.visibility = if (fullscreen) android.view.View.GONE else android.view.View.VISIBLE
+            fullscreenView.visibility = if (fullscreen) android.view.View.VISIBLE else android.view.View.GONE
             applyFullscreen(fullscreen)
-            btnFullscreen.text = if (fullscreen) "Sair da Tela Cheia" else "Tela Cheia"
+            btnFullscreen.text = if (fullscreen) "Exit Fullscreen" else "Fullscreen Player"
         }
     }
 
