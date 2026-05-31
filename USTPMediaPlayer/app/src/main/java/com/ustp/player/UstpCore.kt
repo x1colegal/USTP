@@ -31,7 +31,8 @@ class UstpClient(
     private val serverIp: String,
     private val serverPort: Int,
     private val localPort: Int,
-    private val keepaliveMs: Long = 120
+    private val keepaliveMs: Long = 120,
+    private val playoutDelayMs: Long = 140
 ) {
     private val running = AtomicBoolean(false)
     private val sock = DatagramSocket(localPort)
@@ -39,6 +40,7 @@ class UstpClient(
 
     private val receivedSeq = ConcurrentHashMap.newKeySet<Long>()
     private val byPos = ConcurrentHashMap<Long, ByteArray>()
+    private val firstSeenAtMs = ConcurrentHashMap<Long, Long>()
     private var nextPos = 0L
 
     val outputQueue = LinkedBlockingQueue<ByteArray>(4096)
@@ -97,10 +99,19 @@ class UstpClient(
             sendPacket(TYPE_ACK, 0, pkt.seq, 0, ByteArray(0))
         }
         byPos.putIfAbsent(pkt.streamPos, pkt.payload)
+        firstSeenAtMs.putIfAbsent(pkt.streamPos, System.currentTimeMillis())
 
-        // Ordered output to decoder for stream correctness
+        // Ordered playout with short delay:
+        // receives out-of-order immediately (5/6 can arrive now), but only releases
+        // to decoder when contiguous and after playout delay to let missing packet arrive.
         while (true) {
-            val chunk = byPos.remove(nextPos) ?: break
+            val chunk = byPos[nextPos] ?: break
+            val firstSeen = firstSeenAtMs[nextPos] ?: System.currentTimeMillis()
+            if (System.currentTimeMillis() - firstSeen < playoutDelayMs) {
+                break
+            }
+            byPos.remove(nextPos)
+            firstSeenAtMs.remove(nextPos)
             outputQueue.offer(chunk)
             nextPos += chunk.size.toLong()
         }

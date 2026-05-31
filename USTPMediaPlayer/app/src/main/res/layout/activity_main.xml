@@ -29,6 +29,14 @@
         android:inputType="number"
         android:text="40000" />
 
+    <EditText
+        android:id="@+id/etPlayoutDelay"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Playout Delay (ms)"
+        android:inputType="number"
+        android:text="140" />
+
     <Button
         android:id="@+id/btnStart"
         android:layout_width="match_parent"

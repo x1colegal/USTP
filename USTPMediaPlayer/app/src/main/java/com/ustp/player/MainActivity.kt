@@ -23,6 +23,7 @@ class MainActivity : AppCompatActivity() {
         val etHost = findViewById<EditText>(R.id.etHost)
         val etServerPort = findViewById<EditText>(R.id.etServerPort)
         val etLocalPort = findViewById<EditText>(R.id.etLocalPort)
+        val etPlayoutDelay = findViewById<EditText>(R.id.etPlayoutDelay)
         val tvStatus = findViewById<TextView>(R.id.tvStatus)
         val btnStart = findViewById<Button>(R.id.btnStart)
         val playerView = findViewById<PlayerView>(R.id.playerView)
@@ -31,11 +32,12 @@ class MainActivity : AppCompatActivity() {
             val host = etHost.text.toString().trim()
             val sport = etServerPort.text.toString().toIntOrNull() ?: 40001
             val lport = etLocalPort.text.toString().toIntOrNull() ?: 40000
+            val delayMs = etPlayoutDelay.text.toString().toLongOrNull() ?: 140L
 
             client?.stop()
             player?.release()
 
-            val c = UstpClient(host, sport, lport)
+            val c = UstpClient(host, sport, lport, playoutDelayMs = delayMs)
             client = c
             c.start { msg -> runOnUiThread { tvStatus.text = msg } }
 
