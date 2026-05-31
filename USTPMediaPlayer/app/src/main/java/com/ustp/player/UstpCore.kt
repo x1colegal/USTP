@@ -46,6 +46,7 @@ class UstpClient(
     private var nextPos = 0L
     private val maxSeqSeen = AtomicLong(0L)
     private val maxPosSeen = AtomicLong(0L)
+    @Volatile private var lastDataAtMs: Long = 0L
 
     val outputQueue = LinkedBlockingQueue<ByteArray>(4096)
 
@@ -100,12 +101,18 @@ class UstpClient(
     }
 
     private fun handleData(pkt: UstpPacket) {
+        val now = System.currentTimeMillis()
+        // If stream was silent for a while, treat this as a fresh session.
+        if (lastDataAtMs != 0L && now - lastDataAtMs > 1800L) {
+            resetState("data timeout/new session")
+        }
+        lastDataAtMs = now
+
         // Detect server/session restart: seq and stream position suddenly go backwards.
         val prevMaxSeq = maxSeqSeen.get()
         val prevMaxPos = maxPosSeen.get()
-        if (prevMaxSeq > 1024 && prevMaxPos > 1024 * 1024 &&
-            pkt.seq < 64 && pkt.streamPos < 64 * 1024
-        ) {
+        if ((prevMaxSeq > 256 && pkt.seq + 128 < prevMaxSeq) ||
+            (prevMaxPos > (512 * 1024) && pkt.streamPos + (256 * 1024) < prevMaxPos)) {
             resetState("server restart detected")
         }
 
@@ -136,13 +143,18 @@ class UstpClient(
 
     private fun maybeNack() {
         if (receivedSeq.isEmpty()) return
+        val now = System.currentTimeMillis()
+        if (lastDataAtMs != 0L && now - lastDataAtMs > 1000L) {
+            // Do not keep requesting old retransmits when stream has paused/restarted.
+            resetState("nack idle cleanup")
+            return
+        }
         val mn = receivedSeq.minOrNull() ?: return
         val mx = receivedSeq.maxOrNull() ?: return
         if (mx - mn > 8192) {
             // Safety cap to avoid phantom wide-range retransmit storms.
             return
         }
-        val now = System.currentTimeMillis()
         var sent = 0
         for (s in mn until mx) {
             if (receivedSeq.contains(s)) continue
@@ -162,6 +174,7 @@ class UstpClient(
         nackLastSentMs.clear()
         maxSeqSeen.set(0L)
         maxPosSeen.set(0L)
+        lastDataAtMs = 0L
         nextPos = 0L
         outputQueue.clear()
         println("[USTP-CLIENT] state reset: $reason")

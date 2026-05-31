@@ -40,27 +40,34 @@ class MainActivity : AppCompatActivity() {
         btnStart.setOnClickListener {
             val host = etHost.text.toString().trim()
             val delayMs = etPlayoutDelay.text.toString().toLongOrNull() ?: 140L
+            if (host.isEmpty()) {
+                tvStatus.text = "Please enter server IP or domain."
+                return@setOnClickListener
+            }
 
             client?.stop()
             player?.release()
+            try {
+                val c = UstpClient(host, fixedServerPort, fixedLocalPort, playoutDelayMs = delayMs)
+                client = c
+                c.start { msg -> runOnUiThread { tvStatus.text = msg } }
 
-            val c = UstpClient(host, fixedServerPort, fixedLocalPort, playoutDelayMs = delayMs)
-            client = c
-            c.start { msg -> runOnUiThread { tvStatus.text = msg } }
+                val exo = ExoPlayer.Builder(this).build()
+                player = exo
+                playerView.player = exo
+                fullscreenView.player = exo
 
-            val exo = ExoPlayer.Builder(this).build()
-            player = exo
-            playerView.player = exo
-            fullscreenView.player = exo
+                val dsFactory = UstpDataSourceFactory(c)
+                val mediaSource = ProgressiveMediaSource.Factory(dsFactory, DefaultExtractorsFactory())
+                    .createMediaSource(MediaItem.fromUri("ustp://live"))
 
-            val dsFactory = UstpDataSourceFactory(c)
-            val mediaSource = ProgressiveMediaSource.Factory(dsFactory, DefaultExtractorsFactory())
-                .createMediaSource(MediaItem.fromUri("ustp://live"))
-
-            exo.setMediaSource(mediaSource)
-            exo.prepare()
-            exo.playWhenReady = true
-            tvStatus.text = "Playing over USTP..."
+                exo.setMediaSource(mediaSource)
+                exo.prepare()
+                exo.playWhenReady = true
+                tvStatus.text = "Playing over USTP..."
+            } catch (e: Exception) {
+                tvStatus.text = "Connection failed: ${e.message}"
+            }
         }
 
         btnFullscreen.setOnClickListener {
