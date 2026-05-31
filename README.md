@@ -118,3 +118,11 @@ If needed, adjust `.gitignore` before publishing.
 
 ## Disclaimer
 USTP is a PoC transport protocol for experimentation and learning. It is not production-hardened like QUIC.
+
+## Roadmap Note (Temporary Bridges)
+Current compatibility bridges (for example converting USTP traffic to friendlier/known protocols for existing tools) are temporary and will be discontinued in future versions.
+
+Planned direction:
+- Official native implementations for key use cases (no protocol-conversion hacks in the final path)
+- First-party apps/tools for USTP workflows (for example native streaming over USTP)
+- HoU (HTTP-over-USTP) is currently WIP and non-public for now
