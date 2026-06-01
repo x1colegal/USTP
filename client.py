@@ -21,29 +21,18 @@ def main() -> None:
     ap.add_argument("--udp-unordered-live", action="store_true", help="Immediate out-of-order UDP output (may corrupt generic players)")
     ap.add_argument("--reorder-buffer-ms", type=int, default=80, help="Initial playout buffer delay for ordered UDP mode")
     ap.add_argument("--keepalive-interval", type=float, default=0.12)
-    ap.add_argument("--connections", type=int, default=1, help="Parallel USTP connections (1-10)")
-    ap.add_argument("--stripe-burst", type=int, default=0, help="Client-side companion knob for docs/ops parity (0 = auto)")
     args = ap.parse_args()
 
-    connections = max(1, min(10, args.connections))
-    stripe_burst = args.stripe_burst if args.stripe_burst > 0 else (12 if connections >= 8 else (8 if connections >= 4 else 4))
     resolved_peer_ip = socket.gethostbyname(args.peer_ip)
 
-    socks = []
-    peers = []
-    recvs = []
-    for i in range(connections):
-        usock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        usock.bind((args.bind_ip, args.bind_port + i))
-        peer = (resolved_peer_ip, args.peer_port + i)
-        recv = USTPReceiver(sock=usock, peer=peer)
-        socks.append(usock)
-        peers.append(peer)
-        recvs.append(recv)
-        local_ip, local_port = usock.getsockname()
-        print(f"[USTP-CLIENT] conn={i} local bind {local_ip}:{local_port}")
-        print(f"[USTP-CLIENT] conn={i} peer {args.peer_ip} resolved={resolved_peer_ip}:{peer[1]}")
-    print(f"[USTP-CLIENT] connections={connections} stripe_burst={stripe_burst}")
+    usock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    usock.bind((args.bind_ip, args.bind_port))
+    peer = (resolved_peer_ip, args.peer_port)
+    recv = USTPReceiver(sock=usock, peer=peer)
+
+    local_ip, local_port = usock.getsockname()
+    print(f"[USTP-CLIENT] local bind {local_ip}:{local_port}")
+    print(f"[USTP-CLIENT] peer {args.peer_ip} resolved={resolved_peer_ip}:{peer[1]}")
 
     out_by_pos = {}
     next_out_pos = 0
@@ -86,8 +75,6 @@ def main() -> None:
                         pass
                     clients.remove(d)
     else:
-        tsock = None
-
         def accept_loop() -> None:
             return
 
@@ -96,27 +83,22 @@ def main() -> None:
 
     running = True
 
-    def keepalive_loop(conn_idx: int) -> None:
-        socki = socks[conn_idx]
-        peeri = peers[conn_idx]
+    def keepalive_loop() -> None:
         while running:
             hello = mkp(TYPE_HELLO, payload=(48).to_bytes(2, "big"))
-            socki.sendto(hello.to_bytes(), peeri)
+            usock.sendto(hello.to_bytes(), peer)
             time.sleep(args.keepalive_interval)
 
-    def nack_loop(conn_idx: int) -> None:
-        recvi = recvs[conn_idx]
+    def nack_loop() -> None:
         while running:
-            recvi.maybe_nack()
+            recv.maybe_nack()
             time.sleep(0.03)
 
-    def recv_loop(conn_idx: int) -> None:
+    def recv_loop() -> None:
         nonlocal next_out_pos, last_gap_log
-        socki = socks[conn_idx]
-        recvi = recvs[conn_idx]
         while running:
             try:
-                raw, addr = socki.recvfrom(65535)
+                raw, addr = usock.recvfrom(65535)
             except Exception:
                 continue
             if addr[0] != resolved_peer_ip:
@@ -129,19 +111,12 @@ def main() -> None:
             if pkt.pkt_type != TYPE_DATA:
                 continue
 
-            recvi.handle_data(pkt)
+            recv.handle_data(pkt)
             if args.output_mode == "udp" and args.udp_unordered_live:
                 output_send(pkt.payload)
 
             with reorder_lock:
                 out_by_pos[pkt.stream_pos] = pkt.payload
-                if len(out_by_pos) > 4096:
-                    # Anti-storm guard: stale disorder exploded, clear receiver gap memory.
-                    recvi.received_seq.clear()
-                    recvi.nack_ts.clear()
-                    out_by_pos.clear()
-                    print("[USTP-CLIENT] reorder overflow guard triggered, state trimmed")
-                    continue
                 while next_out_pos in out_by_pos:
                     if args.output_mode == "udp" and not args.udp_unordered_live and time.time() < ordered_release_at:
                         break
@@ -167,11 +142,9 @@ def main() -> None:
 
     if args.output_mode == "tcp":
         threading.Thread(target=accept_loop, daemon=True).start()
-
-    for i in range(connections):
-        threading.Thread(target=keepalive_loop, args=(i,), daemon=True).start()
-        threading.Thread(target=nack_loop, args=(i,), daemon=True).start()
-        threading.Thread(target=recv_loop, args=(i,), daemon=True).start()
+    threading.Thread(target=keepalive_loop, daemon=True).start()
+    threading.Thread(target=nack_loop, daemon=True).start()
+    threading.Thread(target=recv_loop, daemon=True).start()
 
     if args.output_mode == "tcp":
         print(f"[USTP-CLIENT] TCP output on tcp://{args.tcp_host}:{args.tcp_port}")

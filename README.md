@@ -7,11 +7,17 @@ This repository focuses on the **Python transport/runtime** only:
 - USTP packet format
 - Selective retransmission (ACK + retransmit request)
 - Out-of-order receive handling
-- Parallel USTP connections (striping) for better throughput/loss resilience
 - Stream mode (FFmpeg MPEG-TS over USTP)
 - File transfer mode over USTP
 
-No first-party native player/app is part of the supported scope in this repo.
+## Current transport model
+USTP currently uses **one connection per flow/resource**.
+
+Examples:
+- One stream = one USTP connection
+- One file transfer task = one USTP connection
+
+Planned future architecture may use multiple USTP connections for **different resources** (for example stream + chat + file task), not striping multiple connections for a single stream.
 
 ## Protocol behavior
 USTP allows physical packet arrival out of order and selective recovery.
@@ -48,8 +54,6 @@ python3 server.py \
   --bind-ip 0.0.0.0 \
   --bind-port 40001 \
   --video "<HLS_URL_OR_FILE>" \
-  --connections 4 \
-  --stripe-burst 0 \
   --window 512 \
   --rto 0.25 \
   --loss 0
@@ -58,15 +62,6 @@ python3 server.py \
 Notes:
 - `--peer-port 0` enables endpoint learning from client control packets (NAT-friendly behavior).
 - `--loss` simulates outbound packet loss on server side.
-- `--connections` enables parallel USTP links. Allowed range is `1..10`.
-- Hard cap is enforced in code: values above 10 are clamped to 10.
-- `--stripe-burst` controls how many packets are sent on one connection before switching to the next (`0 = auto`).
-- `--auto-change-connections` enables dynamic weighted distribution (better links get more packets, weaker links get fewer).
-- Start with `--connections 2` or `--connections 4`. Very high values can increase jitter/reorder pressure.
-- For `--connections 10`, use a higher reorder delay and burst striping (example: `--stripe-burst 12` and client `--reorder-buffer-ms 180` to `260`).
-- For `--connections 10`, recommended:
-  - server: `--stripe-burst 0 --auto-change-connections --congestion-control`
-  - client: `--reorder-buffer-ms 180` to `260`
 
 ### Optional Congestion Control
 Congestion control is **disabled by default**.
@@ -97,8 +92,6 @@ python3 client.py \
   --peer-port 40001 \
   --bind-ip 0.0.0.0 \
   --bind-port 40000 \
-  --connections 4 \
-  --stripe-burst 0 \
   --output-mode tcp \
   --tcp-host 127.0.0.1 \
   --tcp-port 1238
@@ -116,8 +109,6 @@ python3 client.py \
   --peer-port 40001 \
   --bind-ip 0.0.0.0 \
   --bind-port 40000 \
-  --connections 4 \
-  --stripe-burst 0 \
   --output-mode udp \
   --udp-ip 127.0.0.1 \
   --udp-port 1238 \
