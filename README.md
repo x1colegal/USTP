@@ -32,7 +32,6 @@ Receiver behavior:
 - `client.py`: USTP receiver -> TCP or UDP local output
 - `ustp_file_server.py`: file sender
 - `ustp_file_client.py`: file receiver
-- `run_server.sh`, `run_client.sh`, `run_client_udp.sh`: helper scripts
 
 ## Requirements
 - Python 3
@@ -60,6 +59,7 @@ Notes:
 - `--loss` simulates outbound packet loss on server side.
 - `--connections` enables parallel USTP links. Allowed range is `1..10`.
 - Hard cap is enforced in code: values above 10 are clamped to 10.
+- Start with `--connections 2` or `--connections 4`. Very high values can increase jitter/reorder pressure.
 
 ### Optional Congestion Control
 Congestion control is **disabled by default**.

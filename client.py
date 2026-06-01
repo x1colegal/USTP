@@ -45,6 +45,7 @@ def main() -> None:
     out_by_pos = {}
     next_out_pos = 0
     ordered_release_at = time.time() + (args.reorder_buffer_ms / 1000.0)
+    reorder_lock = threading.Lock()
 
     clients = []
     cl_lock = threading.Lock()
@@ -128,25 +129,26 @@ def main() -> None:
             if args.output_mode == "udp" and args.udp_unordered_live:
                 output_send(pkt.payload)
 
-            out_by_pos[pkt.stream_pos] = pkt.payload
-            while next_out_pos in out_by_pos:
-                if args.output_mode == "udp" and not args.udp_unordered_live and time.time() < ordered_release_at:
-                    break
-                chunk = out_by_pos.pop(next_out_pos)
-                if args.output_mode == "tcp" or (args.output_mode == "udp" and not args.udp_unordered_live):
-                    output_send(chunk)
-                next_out_pos += len(chunk)
+            with reorder_lock:
+                out_by_pos[pkt.stream_pos] = pkt.payload
+                while next_out_pos in out_by_pos:
+                    if args.output_mode == "udp" and not args.udp_unordered_live and time.time() < ordered_release_at:
+                        break
+                    chunk = out_by_pos.pop(next_out_pos)
+                    if args.output_mode == "tcp" or (args.output_mode == "udp" and not args.udp_unordered_live):
+                        output_send(chunk)
+                    next_out_pos += len(chunk)
 
-            if pkt.stream_pos > next_out_pos:
-                print(
-                    f"[USTP-CLIENT] GAP detected next_pos={next_out_pos} "
-                    f"arrived_pos={pkt.stream_pos} seq={pkt.seq}"
-                )
-            elif pkt.stream_pos < next_out_pos:
-                print(
-                    f"[USTP-CLIENT] RECOVERY seq={pkt.seq} pos={pkt.stream_pos} "
-                    f"reconstructed_until={next_out_pos}"
-                )
+                if pkt.stream_pos > next_out_pos:
+                    print(
+                        f"[USTP-CLIENT] GAP detected next_pos={next_out_pos} "
+                        f"arrived_pos={pkt.stream_pos} seq={pkt.seq}"
+                    )
+                elif pkt.stream_pos < next_out_pos:
+                    print(
+                        f"[USTP-CLIENT] RECOVERY seq={pkt.seq} pos={pkt.stream_pos} "
+                        f"reconstructed_until={next_out_pos}"
+                    )
 
     if args.output_mode == "tcp":
         threading.Thread(target=accept_loop, daemon=True).start()
