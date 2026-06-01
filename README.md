@@ -49,7 +49,7 @@ python3 server.py \
   --bind-port 40001 \
   --video "<HLS_URL_OR_FILE>" \
   --connections 4 \
-  --stripe-burst 8 \
+  --stripe-burst 0 \
   --window 512 \
   --rto 0.25 \
   --loss 0
@@ -60,9 +60,13 @@ Notes:
 - `--loss` simulates outbound packet loss on server side.
 - `--connections` enables parallel USTP links. Allowed range is `1..10`.
 - Hard cap is enforced in code: values above 10 are clamped to 10.
-- `--stripe-burst` controls how many packets are sent on one connection before switching to the next.
+- `--stripe-burst` controls how many packets are sent on one connection before switching to the next (`0 = auto`).
+- `--auto-change-connections` enables dynamic weighted distribution (better links get more packets, weaker links get fewer).
 - Start with `--connections 2` or `--connections 4`. Very high values can increase jitter/reorder pressure.
 - For `--connections 10`, use a higher reorder delay and burst striping (example: `--stripe-burst 12` and client `--reorder-buffer-ms 180` to `260`).
+- For `--connections 10`, recommended:
+  - server: `--stripe-burst 0 --auto-change-connections --congestion-control`
+  - client: `--reorder-buffer-ms 180` to `260`
 
 ### Optional Congestion Control
 Congestion control is **disabled by default**.
@@ -94,6 +98,7 @@ python3 client.py \
   --bind-ip 0.0.0.0 \
   --bind-port 40000 \
   --connections 4 \
+  --stripe-burst 0 \
   --output-mode tcp \
   --tcp-host 127.0.0.1 \
   --tcp-port 1238
@@ -112,6 +117,7 @@ python3 client.py \
   --bind-ip 0.0.0.0 \
   --bind-port 40000 \
   --connections 4 \
+  --stripe-burst 0 \
   --output-mode udp \
   --udp-ip 127.0.0.1 \
   --udp-port 1238 \

@@ -22,9 +22,11 @@ def main() -> None:
     ap.add_argument("--reorder-buffer-ms", type=int, default=80, help="Initial playout buffer delay for ordered UDP mode")
     ap.add_argument("--keepalive-interval", type=float, default=0.12)
     ap.add_argument("--connections", type=int, default=1, help="Parallel USTP connections (1-10)")
+    ap.add_argument("--stripe-burst", type=int, default=0, help="Client-side companion knob for docs/ops parity (0 = auto)")
     args = ap.parse_args()
 
     connections = max(1, min(10, args.connections))
+    stripe_burst = args.stripe_burst if args.stripe_burst > 0 else (12 if connections >= 8 else (8 if connections >= 4 else 4))
     resolved_peer_ip = socket.gethostbyname(args.peer_ip)
 
     socks = []
@@ -41,6 +43,7 @@ def main() -> None:
         local_ip, local_port = usock.getsockname()
         print(f"[USTP-CLIENT] conn={i} local bind {local_ip}:{local_port}")
         print(f"[USTP-CLIENT] conn={i} peer {args.peer_ip} resolved={resolved_peer_ip}:{peer[1]}")
+    print(f"[USTP-CLIENT] connections={connections} stripe_burst={stripe_burst}")
 
     out_by_pos = {}
     next_out_pos = 0

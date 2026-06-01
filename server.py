@@ -20,7 +20,8 @@ def main() -> None:
     ap.add_argument("--loss", type=int, default=0, help="Simulated outbound packet loss percent (0-100)")
     ap.add_argument("--congestion-control", action="store_true", help="Enable optional AIMD congestion control")
     ap.add_argument("--connections", type=int, default=1, help="Parallel USTP connections (1-10)")
-    ap.add_argument("--stripe-burst", type=int, default=8, help="Packets sent per connection before switching (higher = less reorder)")
+    ap.add_argument("--stripe-burst", type=int, default=0, help="Packets sent per connection before switching (0 = auto from connections)")
+    ap.add_argument("--auto-change-connections", action="store_true", help="Dynamically weight packet distribution per connection quality")
     args = ap.parse_args()
 
     connections = max(1, min(10, args.connections))
@@ -90,7 +91,12 @@ def main() -> None:
 
     proc = None
     rr = 0
-    burst_left = max(1, args.stripe_burst)
+    stripe_burst = args.stripe_burst if args.stripe_burst > 0 else (12 if connections >= 8 else (8 if connections >= 4 else 4))
+    burst_left = max(1, stripe_burst)
+    conn_weights = [1 for _ in range(connections)]
+    conn_budget = [1 for _ in range(connections)]
+    score_prev = [{"acks": 0.0, "rto": 0.0} for _ in range(connections)]
+    last_auto_ts = time.time()
     next_stream_pos = 0
     try:
         while True:
@@ -113,13 +119,39 @@ def main() -> None:
                 proc = None
                 continue
 
+            now = time.time()
+            if args.auto_change_connections and now - last_auto_ts >= 1.0:
+                for i, s in enumerate(senders):
+                    st = s.get_stats()
+                    da = st["acks"] - score_prev[i]["acks"]
+                    dr = st["rto"] - score_prev[i]["rto"]
+                    score_prev[i]["acks"] = st["acks"]
+                    score_prev[i]["rto"] = st["rto"]
+                    # More ACK and fewer RTO => higher weight (1..20)
+                    score = da - (dr * 2.0)
+                    w = int(max(1, min(20, 6 + score)))
+                    conn_weights[i] = w
+                conn_budget = conn_weights[:]
+                last_auto_ts = now
+                print(f"[USTP-SERVER] auto weights={conn_weights}")
+
             sender = senders[rr]
             sender.queue_payload(chunk, stream_pos=next_stream_pos)
             next_stream_pos += len(chunk)
             burst_left -= 1
             if burst_left <= 0:
-                rr = (rr + 1) % connections
-                burst_left = max(1, args.stripe_burst)
+                if args.auto_change_connections and connections > 1:
+                    if all(b <= 0 for b in conn_budget):
+                        conn_budget = conn_weights[:]
+                    searched = 0
+                    while searched < connections and conn_budget[rr] <= 0:
+                        rr = (rr + 1) % connections
+                        searched += 1
+                    conn_budget[rr] -= 1
+                    rr = (rr + 1) % connections
+                else:
+                    rr = (rr + 1) % connections
+                burst_left = max(1, stripe_burst)
     except KeyboardInterrupt:
         print("[USTP-SERVER] Interrupted")
     finally:

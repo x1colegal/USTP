@@ -35,6 +35,8 @@ class USTPSender:
         self.running = False
         self.cwnd = 4.0
         self.ssthresh = max(8.0, float(window) / 2.0)
+        self.stats_acks = 0
+        self.stats_rto = 0
 
     def start(self) -> None:
         self.running = True
@@ -101,6 +103,7 @@ class USTPSender:
             with self.lock:
                 if pkt.seq in self.sent:
                     del self.sent[pkt.seq]
+                    self.stats_acks += 1
                     if self.congestion_control:
                         if self.cwnd < self.ssthresh:
                             self.cwnd += 1.0
@@ -132,9 +135,20 @@ class USTPSender:
                     with self.lock:
                         self.ssthresh = max(2.0, self.cwnd / 2.0)
                         self.cwnd = max(1.0, self.ssthresh)
+                with self.lock:
+                    self.stats_rto += len(timed_out)
                 print(f"[USTP-SENDER] RTO queued {len(timed_out)}")
                 self.flush()
             time.sleep(0.03)
+
+    def get_stats(self) -> Dict[str, float]:
+        with self.lock:
+            return {
+                "acks": float(self.stats_acks),
+                "rto": float(self.stats_rto),
+                "inflight": float(len(self.sent)),
+                "cwnd": float(self.cwnd),
+            }
 
 
 class USTPReceiver:
