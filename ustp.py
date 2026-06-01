@@ -37,6 +37,7 @@ class USTPSender:
         self.ssthresh = max(8.0, float(window) / 2.0)
         self.stats_acks = 0
         self.stats_rto = 0
+        self.nack_ts: Dict[int, float] = {}
 
     def start(self) -> None:
         self.running = True
@@ -126,6 +127,11 @@ class USTPSender:
         if pkt.pkt_type == TYPE_RETRANSMIT_REQUEST:
             missing = pkt.seq
             with self.lock:
+                now = time.time()
+                last = self.nack_ts.get(missing, 0.0)
+                if now - last < 0.2:
+                    return
+                self.nack_ts[missing] = now
                 if missing in self.sent and missing not in self.retx_set:
                     self.retx_set.add(missing)
                     self.retx_queue.append(missing)
@@ -176,6 +182,7 @@ class USTPReceiver:
         self.received_seq: Set[int] = set()
         self.nack_ts: Dict[int, float] = {}
         self.last_data_ts = 0.0
+        self.data_count = 0
 
     def handle_data(self, pkt: USTPPacket) -> bytes:
         seq = pkt.seq
@@ -193,6 +200,7 @@ class USTPReceiver:
         self.seq_to_pos[seq] = pos
         self.buffer_by_pos[pos] = pkt.payload
         self.last_data_ts = time.time()
+        self.data_count += 1
 
         # USTP design: deliver immediately (unordered live), never block waiting for gaps.
         # The application must use stream_pos metadata to restore logical order if needed.
@@ -210,6 +218,9 @@ class USTPReceiver:
         # gap detection by seq continuity around observed set
         if not self.received_seq:
             return
+        # Warm-up guard: avoid early false-positive NACK storms.
+        if self.data_count < 12:
+            return
         now = time.time()
         # Do not spam NACK when stream is idle/restarting.
         if self.last_data_ts and (now - self.last_data_ts) > 1.0:
@@ -226,13 +237,13 @@ class USTPReceiver:
             if s in self.received_seq:
                 continue
             last = self.nack_ts.get(s, 0.0)
-            if now - last < 0.35:
+            if now - last < 0.5:
                 continue
             self.nack_ts[s] = now
             nack = mkp(TYPE_RETRANSMIT_REQUEST, seq=s)
             self.sock.sendto(nack.to_bytes(), self.peer)
             sent += 1
-            if sent >= 32:
+            if sent >= 6:
                 break
         if sent:
             print(f"[USTP-RECV] NACK sent={sent}")
