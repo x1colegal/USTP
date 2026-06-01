@@ -2,7 +2,6 @@ import argparse
 import socket
 import threading
 import time
-from collections import deque
 
 from packet import TYPE_CLOSE, TYPE_DATA, TYPE_HELLO, mkp
 from ustp import USTPReceiver, parse_packet
@@ -24,9 +23,14 @@ def main() -> None:
     ap.add_argument("--keepalive-interval", type=float, default=0.12)
     args = ap.parse_args()
 
+    resolved_peer_ip = socket.gethostbyname(args.peer_ip)
     usock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     usock.bind((args.bind_ip, args.bind_port))
-    peer = (args.peer_ip, args.peer_port)
+    peer = (resolved_peer_ip, args.peer_port)
+
+    local_ip, local_port = usock.getsockname()
+    print(f"[USTP-CLIENT] local bind {local_ip}:{local_port}")
+    print(f"[USTP-CLIENT] peer {args.peer_ip} resolved={resolved_peer_ip}:{args.peer_port}")
 
     recv = USTPReceiver(sock=usock, peer=peer)
     out_by_pos = {}
@@ -102,7 +106,7 @@ def main() -> None:
     try:
         while True:
             raw, addr = usock.recvfrom(65535)
-            if addr[0] != args.peer_ip:
+            if addr[0] != resolved_peer_ip:
                 continue
             pkt = parse_packet(raw)
             if not pkt:

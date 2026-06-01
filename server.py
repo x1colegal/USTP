@@ -2,6 +2,7 @@ import argparse
 import subprocess
 import threading
 import time
+import socket
 
 from packet import MAX_PAYLOAD, TYPE_ACK, TYPE_RETRANSMIT_REQUEST, TYPE_HELLO
 from ustp import USTPSender, parse_packet
@@ -17,14 +18,27 @@ def main() -> None:
     ap.add_argument("--window", type=int, default=512)
     ap.add_argument("--rto", type=float, default=0.25)
     ap.add_argument("--loss", type=int, default=0, help="Simulated outbound packet loss percent (0-100)")
+    ap.add_argument("--congestion-control", action="store_true", help="Enable optional AIMD congestion control")
     args = ap.parse_args()
 
-    sock = __import__("socket").socket(__import__("socket").AF_INET, __import__("socket").SOCK_DGRAM)
+    resolved_peer_ip = socket.gethostbyname(args.peer_ip)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind((args.bind_ip, args.bind_port))
-    peer = (args.peer_ip, args.peer_port if args.peer_port > 0 else 40000)
+    peer = (resolved_peer_ip, args.peer_port if args.peer_port > 0 else 40000)
 
-    sender = USTPSender(sock=sock, peer=peer, window=args.window, rto=args.rto, loss_percent=args.loss)
+    sender = USTPSender(
+        sock=sock,
+        peer=peer,
+        window=args.window,
+        rto=args.rto,
+        loss_percent=args.loss,
+        congestion_control=args.congestion_control,
+    )
     sender.start()
+    print(
+        f"[USTP-SERVER] peer={args.peer_ip} resolved={resolved_peer_ip}:{peer[1]} "
+        f"cc={'on' if args.congestion_control else 'off'}"
+    )
 
     running = True
 
@@ -35,7 +49,7 @@ def main() -> None:
                 raw, addr = sock.recvfrom(65535)
             except Exception:
                 continue
-            if addr[0] != args.peer_ip:
+            if addr[0] != resolved_peer_ip:
                 continue
             # NAT fix: always reply to observed source endpoint from client control traffic.
             if args.peer_port == 0 and sender.peer != addr:

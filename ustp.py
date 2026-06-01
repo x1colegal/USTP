@@ -16,12 +16,13 @@ class SentItem:
 
 
 class USTPSender:
-    def __init__(self, sock: socket.socket, peer: Tuple[str, int], window: int = 512, rto: float = 0.25, loss_percent: int = 0):
+    def __init__(self, sock: socket.socket, peer: Tuple[str, int], window: int = 512, rto: float = 0.25, loss_percent: int = 0, congestion_control: bool = False):
         self.sock = sock
         self.peer = peer
         self.window = window
         self.rto = rto
         self.loss_percent = max(0, min(100, loss_percent))
+        self.congestion_control = congestion_control
 
         self.next_seq = 1
         self.next_stream_pos = 0
@@ -32,6 +33,8 @@ class USTPSender:
 
         self.lock = threading.Lock()
         self.running = False
+        self.cwnd = 4.0
+        self.ssthresh = max(8.0, float(window) / 2.0)
 
     def start(self) -> None:
         self.running = True
@@ -59,7 +62,10 @@ class USTPSender:
         while burst < 256:
             with self.lock:
                 in_flight = len(self.sent)
-                if in_flight >= self.window:
+                eff_window = self.window
+                if self.congestion_control:
+                    eff_window = max(1, min(self.window, int(self.cwnd)))
+                if in_flight >= eff_window:
                     return
 
                 # retransmit priority (can send 5,6,4,7,8 physically)
@@ -92,6 +98,11 @@ class USTPSender:
             with self.lock:
                 if pkt.seq in self.sent:
                     del self.sent[pkt.seq]
+                    if self.congestion_control:
+                        if self.cwnd < self.ssthresh:
+                            self.cwnd += 1.0
+                        else:
+                            self.cwnd += 1.0 / max(1.0, self.cwnd)
             return
 
         if pkt.pkt_type == TYPE_RETRANSMIT_REQUEST:
@@ -114,6 +125,10 @@ class USTPSender:
                     self.retx_set.add(seq)
                     self.retx_queue.append(seq)
             if timed_out:
+                if self.congestion_control:
+                    with self.lock:
+                        self.ssthresh = max(2.0, self.cwnd / 2.0)
+                        self.cwnd = max(1.0, self.ssthresh)
                 print(f"[USTP-SENDER] RTO queued {len(timed_out)}")
                 self.flush()
             time.sleep(0.03)
