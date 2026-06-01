@@ -17,9 +17,6 @@ out/
 downloads/
 received/
 
-# optional subproject not ready for publish
-HoU/
-
 # editor
 .vscode/
 .idea/
