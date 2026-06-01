@@ -7,6 +7,7 @@ This repository focuses on the **Python transport/runtime** only:
 - USTP packet format
 - Selective retransmission (ACK + retransmit request)
 - Out-of-order receive handling
+- Parallel USTP connections (striping) for better throughput/loss resilience
 - Stream mode (FFmpeg MPEG-TS over USTP)
 - File transfer mode over USTP
 
@@ -48,6 +49,7 @@ python3 server.py \
   --bind-ip 0.0.0.0 \
   --bind-port 40001 \
   --video "<HLS_URL_OR_FILE>" \
+  --connections 4 \
   --window 512 \
   --rto 0.25 \
   --loss 0
@@ -56,6 +58,8 @@ python3 server.py \
 Notes:
 - `--peer-port 0` enables endpoint learning from client control packets (NAT-friendly behavior).
 - `--loss` simulates outbound packet loss on server side.
+- `--connections` enables parallel USTP links. Allowed range is `1..10`.
+- Hard cap is enforced in code: values above 10 are clamped to 10.
 
 ### Optional Congestion Control
 Congestion control is **disabled by default**.
@@ -86,6 +90,7 @@ python3 client.py \
   --peer-port 40001 \
   --bind-ip 0.0.0.0 \
   --bind-port 40000 \
+  --connections 4 \
   --output-mode tcp \
   --tcp-host 127.0.0.1 \
   --tcp-port 1238
@@ -103,6 +108,7 @@ python3 client.py \
   --peer-port 40001 \
   --bind-ip 0.0.0.0 \
   --bind-port 40000 \
+  --connections 4 \
   --output-mode udp \
   --udp-ip 127.0.0.1 \
   --udp-port 1238 \

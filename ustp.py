@@ -26,7 +26,7 @@ class USTPSender:
 
         self.next_seq = 1
         self.next_stream_pos = 0
-        self.pending: Deque[bytes] = deque()
+        self.pending: Deque[Tuple[bytes, Optional[int]]] = deque()
         self.sent: Dict[int, SentItem] = {}
         self.retx_queue: Deque[int] = deque()
         self.retx_set: Set[int] = set()
@@ -44,11 +44,11 @@ class USTPSender:
     def stop(self) -> None:
         self.running = False
 
-    def queue_payload(self, payload: bytes) -> None:
+    def queue_payload(self, payload: bytes, stream_pos: Optional[int] = None) -> None:
         if not payload:
             return
         with self.lock:
-            self.pending.append(payload)
+            self.pending.append((payload, stream_pos))
         self.flush()
 
     def _send_raw(self, raw: bytes) -> None:
@@ -79,11 +79,14 @@ class USTPSender:
                     raw = it.raw
                     it.last_sent = time.time()
                 elif self.pending:
-                    payload = self.pending.popleft()
+                    payload, ext_stream_pos = self.pending.popleft()
                     seq = self.next_seq
                     self.next_seq += 1
-                    sp = self.next_stream_pos
-                    self.next_stream_pos += len(payload)
+                    if ext_stream_pos is None:
+                        sp = self.next_stream_pos
+                        self.next_stream_pos += len(payload)
+                    else:
+                        sp = ext_stream_pos
                     pkt = mkp(TYPE_DATA, seq=seq, stream_pos=sp, payload=payload)
                     raw = pkt.to_bytes()
                     self.sent[seq] = SentItem(pkt=pkt, raw=raw, last_sent=time.time())

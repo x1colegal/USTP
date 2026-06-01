@@ -21,18 +21,27 @@ def main() -> None:
     ap.add_argument("--udp-unordered-live", action="store_true", help="Immediate out-of-order UDP output (may corrupt generic players)")
     ap.add_argument("--reorder-buffer-ms", type=int, default=80, help="Initial playout buffer delay for ordered UDP mode")
     ap.add_argument("--keepalive-interval", type=float, default=0.12)
+    ap.add_argument("--connections", type=int, default=1, help="Parallel USTP connections (1-10)")
     args = ap.parse_args()
 
+    connections = max(1, min(10, args.connections))
     resolved_peer_ip = socket.gethostbyname(args.peer_ip)
-    usock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    usock.bind((args.bind_ip, args.bind_port))
-    peer = (resolved_peer_ip, args.peer_port)
 
-    local_ip, local_port = usock.getsockname()
-    print(f"[USTP-CLIENT] local bind {local_ip}:{local_port}")
-    print(f"[USTP-CLIENT] peer {args.peer_ip} resolved={resolved_peer_ip}:{args.peer_port}")
+    socks = []
+    peers = []
+    recvs = []
+    for i in range(connections):
+        usock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        usock.bind((args.bind_ip, args.bind_port + i))
+        peer = (resolved_peer_ip, args.peer_port + i)
+        recv = USTPReceiver(sock=usock, peer=peer)
+        socks.append(usock)
+        peers.append(peer)
+        recvs.append(recv)
+        local_ip, local_port = usock.getsockname()
+        print(f"[USTP-CLIENT] conn={i} local bind {local_ip}:{local_port}")
+        print(f"[USTP-CLIENT] conn={i} peer {args.peer_ip} resolved={resolved_peer_ip}:{peer[1]}")
 
-    recv = USTPReceiver(sock=usock, peer=peer)
     out_by_pos = {}
     next_out_pos = 0
     ordered_release_at = time.time() + (args.reorder_buffer_ms / 1000.0)
@@ -82,21 +91,70 @@ def main() -> None:
 
     running = True
 
-    def keepalive_loop() -> None:
+    def keepalive_loop(conn_idx: int) -> None:
+        socki = socks[conn_idx]
+        peeri = peers[conn_idx]
         while running:
             hello = mkp(TYPE_HELLO, payload=(48).to_bytes(2, "big"))
-            usock.sendto(hello.to_bytes(), peer)
+            socki.sendto(hello.to_bytes(), peeri)
             time.sleep(args.keepalive_interval)
 
-    def nack_loop() -> None:
+    def nack_loop(conn_idx: int) -> None:
+        recvi = recvs[conn_idx]
         while running:
-            recv.maybe_nack()
+            recvi.maybe_nack()
             time.sleep(0.03)
+
+    def recv_loop(conn_idx: int) -> None:
+        nonlocal next_out_pos
+        socki = socks[conn_idx]
+        recvi = recvs[conn_idx]
+        while running:
+            try:
+                raw, addr = socki.recvfrom(65535)
+            except Exception:
+                continue
+            if addr[0] != resolved_peer_ip:
+                continue
+            pkt = parse_packet(raw)
+            if not pkt:
+                continue
+            if pkt.pkt_type == TYPE_CLOSE:
+                continue
+            if pkt.pkt_type != TYPE_DATA:
+                continue
+
+            recvi.handle_data(pkt)
+            if args.output_mode == "udp" and args.udp_unordered_live:
+                output_send(pkt.payload)
+
+            out_by_pos[pkt.stream_pos] = pkt.payload
+            while next_out_pos in out_by_pos:
+                if args.output_mode == "udp" and not args.udp_unordered_live and time.time() < ordered_release_at:
+                    break
+                chunk = out_by_pos.pop(next_out_pos)
+                if args.output_mode == "tcp" or (args.output_mode == "udp" and not args.udp_unordered_live):
+                    output_send(chunk)
+                next_out_pos += len(chunk)
+
+            if pkt.stream_pos > next_out_pos:
+                print(
+                    f"[USTP-CLIENT] GAP detected next_pos={next_out_pos} "
+                    f"arrived_pos={pkt.stream_pos} seq={pkt.seq}"
+                )
+            elif pkt.stream_pos < next_out_pos:
+                print(
+                    f"[USTP-CLIENT] RECOVERY seq={pkt.seq} pos={pkt.stream_pos} "
+                    f"reconstructed_until={next_out_pos}"
+                )
 
     if args.output_mode == "tcp":
         threading.Thread(target=accept_loop, daemon=True).start()
-    threading.Thread(target=keepalive_loop, daemon=True).start()
-    threading.Thread(target=nack_loop, daemon=True).start()
+
+    for i in range(connections):
+        threading.Thread(target=keepalive_loop, args=(i,), daemon=True).start()
+        threading.Thread(target=nack_loop, args=(i,), daemon=True).start()
+        threading.Thread(target=recv_loop, args=(i,), daemon=True).start()
 
     if args.output_mode == "tcp":
         print(f"[USTP-CLIENT] TCP output on tcp://{args.tcp_host}:{args.tcp_port}")
@@ -105,40 +163,7 @@ def main() -> None:
 
     try:
         while True:
-            raw, addr = usock.recvfrom(65535)
-            if addr[0] != resolved_peer_ip:
-                continue
-            pkt = parse_packet(raw)
-            if not pkt:
-                continue
-            if pkt.pkt_type == TYPE_CLOSE:
-                break
-            if pkt.pkt_type == TYPE_DATA:
-                # USTP receive path: accept out-of-order immediately.
-                recv.handle_data(pkt)
-                if args.output_mode == "udp" and args.udp_unordered_live:
-                    # Immediate passthrough for low-latency mode (unordered live delivery).
-                    output_send(pkt.payload)
-
-                # Logical stream reconstruction tracking by stream_pos.
-                out_by_pos[pkt.stream_pos] = pkt.payload
-                while next_out_pos in out_by_pos:
-                    if args.output_mode == "udp" and not args.udp_unordered_live and time.time() < ordered_release_at:
-                        break
-                    chunk = out_by_pos.pop(next_out_pos)
-                    if args.output_mode == "tcp" or (args.output_mode == "udp" and not args.udp_unordered_live):
-                        output_send(chunk)
-                    next_out_pos += len(chunk)
-                if pkt.stream_pos > next_out_pos:
-                    print(
-                        f"[USTP-CLIENT] GAP detected next_pos={next_out_pos} "
-                        f"arrived_pos={pkt.stream_pos} seq={pkt.seq}"
-                    )
-                elif pkt.stream_pos < next_out_pos:
-                    print(
-                        f"[USTP-CLIENT] RECOVERY seq={pkt.seq} pos={pkt.stream_pos} "
-                        f"reconstructed_until={next_out_pos}"
-                    )
+            time.sleep(1.0)
     except KeyboardInterrupt:
         print("[USTP-CLIENT] Interrupted")
     finally:
