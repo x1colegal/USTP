@@ -145,6 +145,10 @@ python3 ustp_file_server.py \
 - Generic media players may require ordered output behavior to avoid corruption.
 - Behavior under high loss/high RTT is still under active tuning.
 
+## USTP vs USTPS
+- **USTP**: reliable UDP transport logic (Selective Retransmit), no built-in TLS encryption.
+- **USTPS (USTP-Secure)**: USTP traffic tunneled through TLS 1.3 using modern AEAD cipher suites (AES-GCM / ChaCha20-Poly1305).
+
 ## GitHub notes
 Current `.gitignore` intentionally ignores:
 - `*.sh`
