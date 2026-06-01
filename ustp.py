@@ -46,6 +46,18 @@ class USTPSender:
     def stop(self) -> None:
         self.running = False
 
+    def reset_session(self) -> None:
+        with self.lock:
+            self.next_seq = 1
+            self.next_stream_pos = 0
+            self.pending.clear()
+            self.sent.clear()
+            self.retx_queue.clear()
+            self.retx_set.clear()
+            self.cwnd = 4.0
+            self.ssthresh = max(8.0, float(self.window) / 2.0)
+        print("[USTP-SENDER] session reset")
+
     def queue_payload(self, payload: bytes, stream_pos: Optional[int] = None) -> None:
         if not payload:
             return
@@ -163,6 +175,7 @@ class USTPReceiver:
 
         self.received_seq: Set[int] = set()
         self.nack_ts: Dict[int, float] = {}
+        self.last_data_ts = 0.0
 
     def handle_data(self, pkt: USTPPacket) -> bytes:
         seq = pkt.seq
@@ -179,6 +192,7 @@ class USTPReceiver:
 
         self.seq_to_pos[seq] = pos
         self.buffer_by_pos[pos] = pkt.payload
+        self.last_data_ts = time.time()
 
         # USTP design: deliver immediately (unordered live), never block waiting for gaps.
         # The application must use stream_pos metadata to restore logical order if needed.
@@ -197,14 +211,22 @@ class USTPReceiver:
         if not self.received_seq:
             return
         now = time.time()
+        # Do not spam NACK when stream is idle/restarting.
+        if self.last_data_ts and (now - self.last_data_ts) > 1.0:
+            self.received_seq.clear()
+            self.nack_ts.clear()
+            return
         mn = min(self.received_seq)
         mx = max(self.received_seq)
+        # Limit scan window to recent sequence space to avoid storms.
+        if mx - mn > 512:
+            mn = mx - 512
         sent = 0
         for s in range(mn, mx):
             if s in self.received_seq:
                 continue
             last = self.nack_ts.get(s, 0.0)
-            if now - last < 0.2:
+            if now - last < 0.35:
                 continue
             self.nack_ts[s] = now
             nack = mkp(TYPE_RETRANSMIT_REQUEST, seq=s)

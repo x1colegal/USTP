@@ -54,9 +54,12 @@ def main() -> None:
     )
 
     running = True
+    last_hello_ts = [0.0 for _ in range(connections)]
+    session_active = False
+    session_epoch = 0
 
     def ctrl_loop(idx: int) -> None:
-        nonlocal running
+        nonlocal running, session_active, session_epoch
         socki = socks[idx]
         sender = senders[idx]
         while running:
@@ -80,6 +83,14 @@ def main() -> None:
             pkt = parse_packet(raw)
             if not pkt:
                 continue
+            if pkt.pkt_type == TYPE_HELLO:
+                last_hello_ts[idx] = time.time()
+                if not session_active:
+                    session_active = True
+                    session_epoch += 1
+                    for s in senders:
+                        s.reset_session()
+                    print(f"[USTP-SERVER] session activated epoch={session_epoch}")
             if pkt.pkt_type in (TYPE_ACK, TYPE_RETRANSMIT_REQUEST, TYPE_HELLO):
                 sender.on_control(pkt)
 
@@ -120,6 +131,16 @@ def main() -> None:
                 continue
 
             now = time.time()
+            # If no HELLO for a while, drop unsent state and pause TX to avoid phantom RTO loop.
+            active_recent = any((now - ts) <= 1.5 for ts in last_hello_ts)
+            if not active_recent:
+                if session_active:
+                    session_active = False
+                    for s in senders:
+                        s.reset_session()
+                    print("[USTP-SERVER] session idle, paused TX until client HELLO")
+                continue
+
             if args.auto_change_connections and now - last_auto_ts >= 1.0:
                 for i, s in enumerate(senders):
                     st = s.get_stats()
