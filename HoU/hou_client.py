@@ -10,27 +10,64 @@ from ustp_transport import USTPNode
 
 def read_http_request(conn):
     data = bytearray()
-    while b"\r\n\r\n" not in data and len(data) < 64 * 1024:
-        b = conn.recv(4096)
+    while b"\r\n\r\n" not in data and len(data) < 128 * 1024:
+        b = conn.recv(8192)
         if not b:
             break
         data.extend(b)
     return bytes(data)
 
 
-def parse_target(req: bytes) -> str:
+def parse_http_request(req: bytes):
+    head, _, body = req.partition(b"\r\n\r\n")
+    lines = head.split(b"\r\n")
+    if not lines:
+        return None
+
     try:
-        line = req.split(b"\r\n", 1)[0].decode("utf-8", errors="replace")
-        parts = line.split(" ")
-        if len(parts) < 2:
-            return ""
-        path = parts[1].strip()
-        # expected: /google.com or /https://google.com/search?q=x
-        if path.startswith("/"):
-            path = path[1:]
-        return path
+        method, target, version = lines[0].decode("utf-8", errors="replace").split(" ", 2)
     except Exception:
-        return ""
+        return None
+
+    headers = {}
+    for ln in lines[1:]:
+        if b":" not in ln:
+            continue
+        k, v = ln.split(b":", 1)
+        headers[k.decode("utf-8", errors="replace").strip()] = v.decode("utf-8", errors="replace").strip()
+
+    host = headers.get("Host", "").strip()
+    path = target
+
+    if target.startswith("http://") or target.startswith("https://"):
+        u = urlsplit(target)
+        host = u.netloc or host
+        path = u.path or "/"
+        if u.query:
+            path += "?" + u.query
+    else:
+        if not path.startswith("/"):
+            path = "/" + path
+
+    # Compatibility mode: /google.com style
+    if path.startswith("/") and host == "":
+        maybe = path[1:]
+        if maybe and "/" not in maybe and " " not in maybe and "." in maybe:
+            host = maybe
+            path = "/"
+
+    if not host:
+        return None
+
+    return {
+        "method": method,
+        "target": "",
+        "host": host,
+        "path": path,
+        "version": version,
+        "headers": headers,
+        "body_len": len(body),
+    }
 
 
 def send_bad_request(conn, msg="bad request"):
@@ -42,7 +79,7 @@ def send_bad_request(conn, msg="bad request"):
     )
 
 
-def recv_json_line(sess, timeout=10.0):
+def recv_json_line(sess, timeout=12.0):
     data = bytearray()
     while True:
         b = sess.recv_bytes(4096, timeout=timeout)
@@ -52,9 +89,7 @@ def recv_json_line(sess, timeout=10.0):
             continue
         data.extend(b)
         if b"\n" in data:
-            line, rest = bytes(data).split(b"\n", 1)
-            # keep remainder by prepending back to read buffer is not supported;
-            # protocol guarantees next bytes are body only after this line.
+            line, _rest = bytes(data).split(b"\n", 1)
             return json.loads(line.decode("utf-8", errors="replace"))
 
 
@@ -63,14 +98,15 @@ def handle_http_client(conn, node, server_ip, server_port):
         req = read_http_request(conn)
         if not req:
             return
-        target = parse_target(req)
-        if not target:
-            send_bad_request(conn, "use /domain-or-url (example: /google.com)")
+
+        parsed = parse_http_request(req)
+        if not parsed:
+            send_bad_request(conn, "invalid HTTP request / missing Host")
             return
 
         conn_id = random.randint(1, 0xFFFFFFFF)
         sess = node.get_or_create((server_ip, server_port), conn_id)
-        sess.queue_send((json.dumps({"target": target}) + "\n").encode("utf-8"))
+        sess.queue_send((json.dumps(parsed) + "\n").encode("utf-8"))
 
         meta = recv_json_line(sess)
         if not meta or not meta.get("ok"):
@@ -81,7 +117,7 @@ def handle_http_client(conn, node, server_ip, server_port):
         total = int(meta.get("len", 0))
         got = 0
         while got < total:
-            b = sess.recv_bytes(min(16384, total - got), timeout=10.0)
+            b = sess.recv_bytes(min(16384, total - got), timeout=15.0)
             if not b:
                 if sess.closed:
                     break
@@ -115,22 +151,17 @@ def main():
     lsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     lsock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     lsock.bind((args.bind_ip, args.bind_port))
-    lsock.listen(50)
+    lsock.listen(100)
 
     print(
         f"[HoU-CLIENT] local HTTP on http://{args.bind_ip}:{args.bind_port} -> "
         f"USTP {args.server_ip}({resolved}):{args.server_port}"
     )
-    print("[HoU-CLIENT] request style: GET /google.com or /https://google.com/search?q=test")
 
     try:
         while True:
             c, _a = lsock.accept()
-            threading.Thread(
-                target=handle_http_client,
-                args=(c, node, resolved, args.server_port),
-                daemon=True,
-            ).start()
+            threading.Thread(target=handle_http_client, args=(c, node, resolved, args.server_port), daemon=True).start()
     except KeyboardInterrupt:
         pass
     finally:

@@ -1,18 +1,14 @@
 # HoU (HTTP/1.1 over USTP)
 
-HoU exposes a local HTTP endpoint on the client and tunnels the request over USTP to the server.
+HoU runs a local HTTP proxy on the client and transports each request over USTP to the server.
+The server fetches upstream using HTTPS and returns normalized HTTP/1.1 responses.
 
-Server behavior:
-- Receives target path from client (example: `google.com`)
-- Always fetches upstream using HTTPS
-- Returns raw HTTP response bytes to client
-
-## Start server
+## Server
 ```bash
-python3 hou_server.py --bind-ip 0.0.0.0 --bind-port 50001
+python3 hou_server.py --bind-ip 0.0.0.0 --bind-port 50001 --follow-redirects
 ```
 
-## Start client
+## Client
 ```bash
 python3 hou_client.py \
   --bind-ip 127.0.0.1 \
@@ -23,13 +19,23 @@ python3 hou_client.py \
   --server-port 50001
 ```
 
-## Use
-Examples:
+## Browser usage
+Set HTTP proxy to:
+- Host: `127.0.0.1`
+- Port: `8080`
+
+## cURL examples
 ```bash
-curl -i http://127.0.0.1:8080/google.com
-curl -i "http://127.0.0.1:8080/https://example.com/?q=test"
+curl -i -x http://127.0.0.1:8080 https://www.google.com/
+curl -i -x http://127.0.0.1:8080 https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
 ```
 
-Notes:
-- Upstream fetch is always HTTPS.
-- This is a PoC and not a hardened secure proxy.
+Compatibility path style (still supported):
+```bash
+curl -i http://127.0.0.1:8080/google.com
+```
+
+## Notes
+- Upstream is forced to HTTPS.
+- Redirect handling can be resolved server-side (`--follow-redirects`).
+- This remains a PoC proxy and is not production-hardened.
