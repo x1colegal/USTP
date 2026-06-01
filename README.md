@@ -148,7 +148,6 @@ python3 ustp_file_server.py \
 ## GitHub notes
 Current `.gitignore` intentionally ignores:
 - `*.sh`
-- `HoU/`
 - cache/temp/log files
 
 If you want to version helper scripts, add them with `git add -f`.
