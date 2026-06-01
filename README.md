@@ -49,6 +49,7 @@ python3 server.py \
   --bind-port 40001 \
   --video "<HLS_URL_OR_FILE>" \
   --connections 4 \
+  --stripe-burst 8 \
   --window 512 \
   --rto 0.25 \
   --loss 0
@@ -59,7 +60,9 @@ Notes:
 - `--loss` simulates outbound packet loss on server side.
 - `--connections` enables parallel USTP links. Allowed range is `1..10`.
 - Hard cap is enforced in code: values above 10 are clamped to 10.
+- `--stripe-burst` controls how many packets are sent on one connection before switching to the next.
 - Start with `--connections 2` or `--connections 4`. Very high values can increase jitter/reorder pressure.
+- For `--connections 10`, use a higher reorder delay and burst striping (example: `--stripe-burst 12` and client `--reorder-buffer-ms 180` to `260`).
 
 ### Optional Congestion Control
 Congestion control is **disabled by default**.

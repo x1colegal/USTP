@@ -20,6 +20,7 @@ def main() -> None:
     ap.add_argument("--loss", type=int, default=0, help="Simulated outbound packet loss percent (0-100)")
     ap.add_argument("--congestion-control", action="store_true", help="Enable optional AIMD congestion control")
     ap.add_argument("--connections", type=int, default=1, help="Parallel USTP connections (1-10)")
+    ap.add_argument("--stripe-burst", type=int, default=8, help="Packets sent per connection before switching (higher = less reorder)")
     args = ap.parse_args()
 
     connections = max(1, min(10, args.connections))
@@ -89,6 +90,7 @@ def main() -> None:
 
     proc = None
     rr = 0
+    burst_left = max(1, args.stripe_burst)
     next_stream_pos = 0
     try:
         while True:
@@ -114,7 +116,10 @@ def main() -> None:
             sender = senders[rr]
             sender.queue_payload(chunk, stream_pos=next_stream_pos)
             next_stream_pos += len(chunk)
-            rr = (rr + 1) % connections
+            burst_left -= 1
+            if burst_left <= 0:
+                rr = (rr + 1) % connections
+                burst_left = max(1, args.stripe_burst)
     except KeyboardInterrupt:
         print("[USTP-SERVER] Interrupted")
     finally:

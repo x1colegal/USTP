@@ -46,6 +46,7 @@ def main() -> None:
     next_out_pos = 0
     ordered_release_at = time.time() + (args.reorder_buffer_ms / 1000.0)
     reorder_lock = threading.Lock()
+    last_gap_log = 0.0
 
     clients = []
     cl_lock = threading.Lock()
@@ -107,7 +108,7 @@ def main() -> None:
             time.sleep(0.03)
 
     def recv_loop(conn_idx: int) -> None:
-        nonlocal next_out_pos
+        nonlocal next_out_pos, last_gap_log
         socki = socks[conn_idx]
         recvi = recvs[conn_idx]
         while running:
@@ -140,10 +141,14 @@ def main() -> None:
                     next_out_pos += len(chunk)
 
                 if pkt.stream_pos > next_out_pos:
-                    print(
-                        f"[USTP-CLIENT] GAP detected next_pos={next_out_pos} "
-                        f"arrived_pos={pkt.stream_pos} seq={pkt.seq}"
-                    )
+                    now = time.time()
+                    if now - last_gap_log >= 0.25:
+                        print(
+                            f"[USTP-CLIENT] GAP next_pos={next_out_pos} "
+                            f"arrived_pos={pkt.stream_pos} seq={pkt.seq} "
+                            f"reorder_q={len(out_by_pos)}"
+                        )
+                        last_gap_log = now
                 elif pkt.stream_pos < next_out_pos:
                     print(
                         f"[USTP-CLIENT] RECOVERY seq={pkt.seq} pos={pkt.stream_pos} "
