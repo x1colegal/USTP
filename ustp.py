@@ -183,6 +183,7 @@ class USTPReceiver:
         self.nack_ts: Dict[int, float] = {}
         self.last_data_ts = 0.0
         self.data_count = 0
+        self.last_max_seq = 0
 
     def handle_data(self, pkt: USTPPacket) -> bytes:
         seq = pkt.seq
@@ -201,6 +202,8 @@ class USTPReceiver:
         self.buffer_by_pos[pos] = pkt.payload
         self.last_data_ts = time.time()
         self.data_count += 1
+        if seq > self.last_max_seq:
+            self.last_max_seq = seq
 
         # USTP design: deliver immediately (unordered live), never block waiting for gaps.
         # The application must use stream_pos metadata to restore logical order if needed.
@@ -229,6 +232,8 @@ class USTPReceiver:
             return
         mn = min(self.received_seq)
         mx = max(self.received_seq)
+        # Only request near-head losses; old holes become stale quickly in striped mode.
+        mn = max(mn, mx - 96)
         # Limit scan window to recent sequence space to avoid storms.
         if mx - mn > 512:
             mn = mx - 512

@@ -135,6 +135,13 @@ def main() -> None:
 
             with reorder_lock:
                 out_by_pos[pkt.stream_pos] = pkt.payload
+                if len(out_by_pos) > 4096:
+                    # Anti-storm guard: stale disorder exploded, clear receiver gap memory.
+                    recvi.received_seq.clear()
+                    recvi.nack_ts.clear()
+                    out_by_pos.clear()
+                    print("[USTP-CLIENT] reorder overflow guard triggered, state trimmed")
+                    continue
                 while next_out_pos in out_by_pos:
                     if args.output_mode == "udp" and not args.udp_unordered_live and time.time() < ordered_release_at:
                         break
