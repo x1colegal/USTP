@@ -24,3 +24,8 @@ HoU/
 .vscode/
 .idea/
 .DS_Store
+
+# local notes
+*.txt
+!README.md
+!LICENSE
