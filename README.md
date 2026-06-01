@@ -57,6 +57,28 @@ Notes:
 - `--peer-port 0` enables endpoint learning from client control packets (NAT-friendly behavior).
 - `--loss` simulates outbound packet loss on server side.
 
+### Optional Congestion Control
+Congestion control is **disabled by default**.
+
+To enable it, add:
+```bash
+--congestion-control
+```
+
+Example:
+```bash
+python3 server.py \
+  --peer-ip <CLIENT_IP_OR_PUBLIC_IP> \
+  --peer-port 0 \
+  --bind-ip 0.0.0.0 \
+  --bind-port 40001 \
+  --video "<HLS_URL_OR_FILE>" \
+  --window 512 \
+  --rto 0.25 \
+  --loss 0 \
+  --congestion-control
+```
+
 ### Client (TCP output for VLC)
 ```bash
 python3 client.py \
