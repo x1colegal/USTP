@@ -148,6 +148,7 @@ python3 ustp_file_server.py \
 ## USTP vs USTPS
 - **USTP**: reliable UDP transport logic (Selective Retransmit), no built-in TLS encryption.
 - **USTPS (USTP-Secure)**: USTP traffic tunneled through TLS 1.3 using modern AEAD cipher suites (AES-GCM / ChaCha20-Poly1305).
+- USTP-Secure repository: https://github.com/x1colegal/USTP-Secure
 
 ## GitHub notes
 Current `.gitignore` intentionally ignores:
